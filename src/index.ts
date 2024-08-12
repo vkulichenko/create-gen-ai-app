@@ -17,8 +17,6 @@ type AstraParams = {
   token: string;
 };
 
-type Params = ProjectParams & AstraParams;
-
 function multiLine(...text: string[]) {
   let multiLineText = text[0];
 
@@ -143,7 +141,7 @@ async function configureAstra(): Promise<AstraParams> {
   }
 }
 
-async function createNextJsApp(params: Params) {
+async function createNextJsApp(params: ProjectParams) {
   return exec(
     "npx", // TODO: Support other package managers.
     [
@@ -162,83 +160,66 @@ async function createNextJsApp(params: Params) {
   );
 }
 
-async function createEnv(params: Params) {
+async function createEnv(params: AstraParams) {
   return writeFile(
-    path.join(params.name, ".env"),
+    ".env",
     `ASTRA_DB_ENDPOINT=${params.endpoint}\nASTRA_DB_TOKEN=${params.token}`,
   );
 }
 
-async function addDependencies(params: Params) {
-  const packageJson = (await readJson(
-    path.join(params.name, "package.json"),
-  )) as PackageJson;
+async function addDependencies() {
+  const packageJson = (await readJson("package.json")) as PackageJson;
 
   packageJson.dependencies = {
     ...packageJson.dependencies,
     "@datastax/astra-db-ts": "^1.4.1", // TODO: Which version to use?
   };
 
-  return writeJson(path.join(params.name, "package.json"), packageJson, {
+  return writeJson("package.json", packageJson, {
     spaces: 2,
   });
 }
 
-async function gitCommit(params: Params) {
+async function installIfNeeded() {
+  const install = (
+    await p.group({
+      install: () =>
+        p.confirm({
+          message: "Do you want us to install dependencies?",
+          initialValue: true,
+        }),
+    })
+  ).install;
+
+  if (install) return exec("npm", ["install"], "Installing dependencies");
+}
+
+async function tryGitCommit() {
   try {
-    await exec("git", ["-C", params.name, "add", "-A"]);
-    await exec("git", [
-      "-C",
-      params.name,
-      "commit",
-      "-m",
-      "Added Gen AI content",
-    ]);
+    await exec("git", ["add", "-A"]);
+    await exec("git", ["commit", "-m", "Added GenAI content"]);
   } catch (_) {}
-}
-
-async function askInstall(): Promise<boolean> {
-  const params = await p.group({
-    install: () =>
-      p.confirm({
-        message: "Do you want us to install dependencies?",
-        initialValue: true,
-      }),
-  });
-
-  return params.install;
-}
-
-async function install(name: string) {
-  // TODO: Support other package managers.
-  return exec(
-    "npm",
-    ["--prefix", `./${name}`, "install", `./${name}`],
-    "Installing dependencies",
-  );
 }
 
 async function main() {
   p.intro("Congrats! You're just several steps from creating a GenAI app!");
 
-  const params = {
-    ...(await configureProject()),
-    ...(await configureAstra()),
-  };
+  const projectParams = await configureProject();
+  const astraParams = await configureAstra();
 
   await task("Generating project", async () => {
-    await createNextJsApp(params);
-    await createEnv(params);
-    await addDependencies(params);
+    await createNextJsApp(projectParams);
+
+    process.chdir(`./${projectParams.name}`);
+
+    await createEnv(astraParams);
+    await addDependencies();
 
     // TODO: Add content.
-
-    await gitCommit(params);
   });
 
-  if (await askInstall()) {
-    await install(params.name);
-  }
+  await installIfNeeded();
+  await tryGitCommit();
 
   p.outro("You're all set!");
 }
