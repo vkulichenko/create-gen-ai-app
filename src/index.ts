@@ -47,7 +47,7 @@ async function task(title: string, task: () => Promise<any>) {
   s.stop(`${title} ✅`);
 }
 
-async function exec(cmd: string, args: string[], spinnerTitle?: string) {
+async function exec(cmd: string, args?: string[], spinnerTitle?: string) {
   const execTask = () => {
     const child = spawn(cmd, args, { stdio: "ignore" });
 
@@ -143,18 +143,6 @@ async function configureAstra(): Promise<AstraParams> {
   }
 }
 
-async function askInstall(): Promise<boolean> {
-  const params = await p.group({
-    install: () =>
-      p.confirm({
-        message: "Do you want us to install dependencies?",
-        initialValue: true,
-      }),
-  });
-
-  return params.install;
-}
-
 async function createNextJsApp(params: Params) {
   return exec(
     "npx", // TODO: Support other package managers.
@@ -196,6 +184,31 @@ async function addDependencies(params: Params) {
   });
 }
 
+async function gitCommit(params: Params) {
+  try {
+    await exec("git", ["-C", params.name, "add", "-A"]);
+    await exec("git", [
+      "-C",
+      params.name,
+      "commit",
+      "-m",
+      "Added Gen AI content",
+    ]);
+  } catch (_) {}
+}
+
+async function askInstall(): Promise<boolean> {
+  const params = await p.group({
+    install: () =>
+      p.confirm({
+        message: "Do you want us to install dependencies?",
+        initialValue: true,
+      }),
+  });
+
+  return params.install;
+}
+
 async function install(name: string) {
   // TODO: Support other package managers.
   return exec(
@@ -219,7 +232,8 @@ async function main() {
     await addDependencies(params);
 
     // TODO: Add content.
-    // TODO: Git commit.
+
+    await gitCommit(params);
   });
 
   if (await askInstall()) {
