@@ -5,20 +5,19 @@ import { writeFile, readJson, writeJson } from "fs-extra";
 import path from "path";
 import { type PackageJson } from "type-fest";
 
+type Language = "ts" | "js";
+
+type ProjectParams = {
+  name: string;
+  language: Language;
+};
+
 type AstraParams = {
   endpoint: string;
   token: string;
 };
 
-type ProjectParams = {
-  name: string;
-  language: string;
-  tailwind: boolean;
-  eslint: boolean;
-  install: boolean;
-};
-
-type Params = AstraParams & ProjectParams;
+type Params = ProjectParams & AstraParams;
 
 function multiLine(...text: string[]) {
   let multiLineText = text[0];
@@ -68,37 +67,33 @@ async function exec(cmd: string, args: string[], spinnerTitle?: string) {
   return spinnerTitle ? task(spinnerTitle, execTask) : execTask();
 }
 
-async function createNextJsApp(params: ProjectParams) {
-  return exec(
-    "npx", // TODO: Support other package managers.
-    [
-      "create-next-app@canary", // TODO: Revert to 'latest' when '--skip-install' is available there.
-      params.name,
-      `--${params.language}`,
-      params.tailwind ? "--tailwind" : "--no-tailwind",
-      params.eslint ? "--eslint" : "--no-eslint",
-      "--no-turbo",
-      "--app",
-      "--no-src-dir",
-      "--import-alias",
-      "@/*",
-      "--skip-install",
-    ],
-  );
-}
+async function configureProject(): Promise<ProjectParams> {
+  const params = await p.group({
+    name: () =>
+      p.text({
+        message: "What is the name of your future GenAI app?",
+        placeholder: "my-gen-ai-app",
+        defaultValue: "my-gen-ai-app",
+      }),
+    language: () => {
+      return p.select({
+        message: "Will you be using TypeScript or JavaScript?",
+        options: [
+          { value: "ts", label: "TypeScript" },
+          { value: "js", label: "JavaScript" },
+        ],
+        initialValue: "ts",
+      });
+    },
+  });
 
-async function install(name: string) {
-  // TODO: Support other package managers.
-  return exec(
-    "npm",
-    ["--prefix", `./${name}`, "install", `./${name}`],
-    "Installing dependencies",
-  );
+  return { ...params, language: params.language as Language };
 }
 
 async function configureAstra(): Promise<AstraParams> {
   note(
-    "To get started, please make sure you have and Astra account and a Astra Vector Database ready to go.",
+    "Now let's make sure you have a working Astra DB connection.",
+    "To proceed, please make sure you have and Astra account and a Astra Vector Database ready to go.",
     "Read here for details: https://docs.datastax.com/en/astra-db-serverless/get-started/quickstart.html#create-a-serverless-vector-database",
   );
 
@@ -108,7 +103,7 @@ async function configureAstra(): Promise<AstraParams> {
     const astraParams = await p.group({
       endpoint: () =>
         p.text({
-          message: "What is the database's API endpoint?",
+          message: "What is your database's API endpoint?",
           placeholder: "https://<DB ID>-<REGION>.apps.astra.datastax.com",
           validate: (value) => {
             if (
@@ -121,7 +116,7 @@ async function configureAstra(): Promise<AstraParams> {
         }),
       token: () =>
         p.text({
-          message: "And what is the application token?",
+          message: "And what is your Astra application token?",
           placeholder: "AstraCS:XXX",
           validate: (value) => {
             if (value.length === 0 || !value.startsWith("AstraCS:"))
@@ -135,6 +130,8 @@ async function configureAstra(): Promise<AstraParams> {
     try {
       await client.db(astraParams.endpoint).listCollections();
 
+      note("Successfully connected to Astra DB!");
+
       return astraParams;
     } catch (e) {
       // TODO: Memorize latest values and use them as defaults on next iteration.
@@ -146,35 +143,8 @@ async function configureAstra(): Promise<AstraParams> {
   }
 }
 
-async function configureProject(): Promise<ProjectParams> {
+async function askInstall(): Promise<boolean> {
   const params = await p.group({
-    name: () =>
-      p.text({
-        message: "What is the name of your future GenAI app?",
-        placeholder: "my-gen-ai-app",
-        defaultValue: "my-gen-ai-app",
-      }),
-
-    language: () => {
-      return p.select({
-        message: "Will you be using TypeScript or JavaScript?",
-        options: [
-          { value: "ts", label: "TypeScript" },
-          { value: "js", label: "JavaScript" },
-        ],
-        initialValue: "ts",
-      });
-    },
-    tailwind: () =>
-      p.confirm({
-        message: "Will you be using Tailwind CSS?",
-        initialValue: true,
-      }),
-    eslint: () =>
-      p.confirm({
-        message: "Will you be using ESLint?",
-        initialValue: false,
-      }),
     install: () =>
       p.confirm({
         message: "Do you want us to install dependencies?",
@@ -182,7 +152,26 @@ async function configureProject(): Promise<ProjectParams> {
       }),
   });
 
-  return params;
+  return params.install;
+}
+
+async function createNextJsApp(params: Params) {
+  return exec(
+    "npx", // TODO: Support other package managers.
+    [
+      "create-next-app@canary", // TODO: Revert to 'latest' when '--skip-install' is available there.
+      params.name,
+      `--${params.language}`,
+      "--tailwind",
+      "--no-eslint",
+      "--no-turbo",
+      "--app",
+      "--no-src-dir",
+      "--import-alias",
+      "@/*",
+      "--skip-install",
+    ],
+  );
 }
 
 async function createEnv(params: Params) {
@@ -207,12 +196,21 @@ async function addDependencies(params: Params) {
   });
 }
 
+async function install(name: string) {
+  // TODO: Support other package managers.
+  return exec(
+    "npm",
+    ["--prefix", `./${name}`, "install", `./${name}`],
+    "Installing dependencies",
+  );
+}
+
 async function main() {
   p.intro("Congrats! You're just several steps from creating a GenAI app!");
 
   const params = {
-    ...(await configureAstra()),
     ...(await configureProject()),
+    ...(await configureAstra()),
   };
 
   await task("Generating project", async () => {
@@ -221,13 +219,14 @@ async function main() {
     await addDependencies(params);
 
     // TODO: Add content.
+    // TODO: Git commit.
   });
 
-  // TODO: Git commit.
+  if (await askInstall()) {
+    await install(params.name);
+  }
 
-  if (params.install) await install(params.name);
-
-  p.outro("Yay!! You're all set!");
+  p.outro("You're all set!");
 }
 
 main().catch((err) => {
