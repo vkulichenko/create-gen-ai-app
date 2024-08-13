@@ -1,9 +1,9 @@
 import spawn from "cross-spawn";
 import * as p from "@clack/prompts";
 import { DataAPIClient } from "@datastax/astra-db-ts";
-import { writeFile, readJson, writeJson } from "fs-extra";
-import path from "path";
+import fs from "fs-extra";
 import { type PackageJson } from "type-fest";
+import chalk from "chalk";
 
 type Language = "ts" | "js";
 
@@ -21,8 +21,7 @@ function multiLine(...text: string[]) {
   let multiLineText = text[0];
 
   for (let i = 1; i < text.length; i++) {
-    // multiLineText += `\n${chalk.dim("│")}  ${text[i]}`; // FIXME
-    multiLineText += `\n   ${text[i]}`;
+    multiLineText += `\n${chalk.dim("│")}  ${text[i]}`;
   }
 
   return multiLineText;
@@ -161,21 +160,21 @@ async function createNextJsApp(params: ProjectParams) {
 }
 
 async function createEnv(params: AstraParams) {
-  return writeFile(
+  return fs.writeFile(
     ".env",
     `ASTRA_DB_ENDPOINT=${params.endpoint}\nASTRA_DB_TOKEN=${params.token}`,
   );
 }
 
 async function addDependencies() {
-  const packageJson = (await readJson("package.json")) as PackageJson;
+  const packageJson = (await fs.readJson("package.json")) as PackageJson;
 
   packageJson.dependencies = {
     ...packageJson.dependencies,
     "@datastax/astra-db-ts": "^1.4.1", // TODO: Which version to use?
   };
 
-  return writeJson("package.json", packageJson, {
+  return fs.writeJson("package.json", packageJson, {
     spaces: 2,
   });
 }
