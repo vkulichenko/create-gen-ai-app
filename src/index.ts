@@ -94,7 +94,13 @@ async function configureAstra(): Promise<AstraParams> {
     "Read here for details: https://docs.datastax.com/en/astra-db-serverless/get-started/quickstart.html#create-a-serverless-vector-database",
   );
 
-  // TODO: Ask for confirmation?
+  await task("Press any key when ready", async () => {
+    return new Promise((resolve) => {
+      process.stdin.on("data", (_) => {
+        resolve(null);
+      });
+    });
+  });
 
   while (true) {
     const astraParams = await p.group({
@@ -190,6 +196,7 @@ async function installIfNeeded() {
     })
   ).install;
 
+  // TODO: Support other package managers.
   if (install) return exec("npm", ["install"], "Installing dependencies");
 }
 
