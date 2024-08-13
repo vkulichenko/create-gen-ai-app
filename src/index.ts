@@ -1,9 +1,9 @@
-import spawn from "cross-spawn";
 import * as p from "@clack/prompts";
 import { DataAPIClient } from "@datastax/astra-db-ts";
+import chalk from "chalk";
+import spawn from "cross-spawn";
 import fs from "fs-extra";
 import { type PackageJson } from "type-fest";
-import chalk from "chalk";
 
 type Language = "ts" | "js";
 
